@@ -21,7 +21,7 @@ import { useTags, setTradeTags } from "@/hooks/use-tags";
 import { useToast } from "@/contexts/toast-context";
 import { SETUP_TYPES } from "@/constants/instruments";
 import { PLATFORM_GROUPS, getPlatform } from "@/constants/platforms";
-import type { TradeWithRelations } from "@/types/database";
+import type { TradeWithRelations, TradeStatus } from "@/types/database";
 
 const schema = z
   .object({
@@ -176,7 +176,7 @@ export function TradeForm({ trade }: Readonly<TradeFormProps>) {
     try {
       const resolvedInstrumentId = await resolveInstrumentId(data.instrument_id);
       const exitPrice = toNullableNumber(data.exit_price as number | "");
-      const status = exitPrice != null ? "closed" : "open";
+      const status = (exitPrice != null ? "closed" : "open") as TradeStatus;
       const platform = toNullableString(data.platform);
 
       const tradePayload = {
