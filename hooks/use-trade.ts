@@ -19,7 +19,7 @@ export function useTrade(id: string) {
     const supabase = createClient();
     const { data, error: err } = await supabase
       .from("trades")
-      .select("*, instruments(*), trade_tags(tags(*)), trade_images(*)")
+      .select("*, instruments(*), trade_tags(tags(*)), trade_images(*), trade_take_profits(*), accounts(*)")
       .eq("id", id)
       .eq("user_id", user.id)
       .single();

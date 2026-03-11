@@ -2,15 +2,17 @@
 
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { BarChart2, BookOpen, Layers, LayoutDashboard, LogOut, PlusCircle, Settings, Tag } from "lucide-react";
+import { BarChart2, BookOpen, Calculator, Layers, LayoutDashboard, LogOut, PlusCircle, Settings, Tag, Wallet } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 
 const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/accounts", label: "Accounts", icon: Wallet },
   { href: "/trades", label: "Trades", icon: BookOpen },
   { href: "/trades/new", label: "New Trade", icon: PlusCircle },
   { href: "/instruments", label: "Instruments", icon: Layers },
   { href: "/tags", label: "Tags", icon: Tag },
+  { href: "/calculator", label: "Calculator", icon: Calculator },
   { href: "/analytics", label: "Analytics", icon: BarChart2 },
   { href: "/settings", label: "Settings", icon: Settings },
 ];

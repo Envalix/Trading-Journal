@@ -3,10 +3,11 @@
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Copy, Pencil, RefreshCw, Trash2, X } from "lucide-react";
+import { ArrowLeft, Check, Copy, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { useTrade } from "@/hooks/use-trade";
 import { useUpdateTrade } from "@/hooks/use-update-trade";
 import { useCreateTrade } from "@/hooks/use-create-trade";
+import { useTradeTakeProfit } from "@/hooks/use-trade-take-profits";
 import { useToast } from "@/contexts/toast-context";
 import { DeleteConfirmModal } from "@/components/trades/delete-confirm-modal";
 import { CloseTradeModal } from "@/components/trades/close-trade-modal";
@@ -15,15 +16,34 @@ import { ImageUploader } from "@/components/trades/image-uploader";
 import { TagChip } from "@/components/tags/tag-chip";
 import { Button } from "@/components/ui/button";
 import { cn, formatCurrency } from "@/lib/utils";
-import type { TradeImage } from "@/types/database";
+import type { TradeImage, TradeTakeProfit } from "@/types/database";
 
 function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
   if (value === null || value === undefined || value === "") return null;
   return (
-    <div className="flex items-start justify-between gap-4 py-3 border-b border-surface-100 last:border-0">
+    <div className="flex items-start justify-between gap-4 border-b border-surface-100 py-3 last:border-0 dark:border-surface-700">
       <span className="shrink-0 text-sm text-surface-500">{label}</span>
-      <span className="text-sm font-medium text-surface-900 text-right">{value}</span>
+      <span className="text-right text-sm font-medium text-surface-900 dark:text-surface-50">
+        {value}
+      </span>
     </div>
+  );
+}
+
+function TPStatusBadge({ status }: { status: TradeTakeProfit["status"] }) {
+  return (
+    <span
+      className={cn(
+        "rounded-full px-2 py-0.5 text-xs font-medium",
+        status === "hit"
+          ? "bg-profit-light text-profit"
+          : status === "cancelled"
+          ? "bg-surface-100 text-surface-500 dark:bg-surface-700"
+          : "bg-primary-100 text-primary-700 dark:bg-primary-900/40 dark:text-primary-300"
+      )}
+    >
+      {status === "hit" ? "Hit" : status === "cancelled" ? "Cancelled" : "Pending"}
+    </span>
   );
 }
 
@@ -35,17 +55,32 @@ export default function TradeDetailPage() {
   const { trade, loading, error } = useTrade(id);
   const { updateTrade, deleteTrade } = useUpdateTrade();
   const { createTrade } = useCreateTrade();
+  const { tps, markTPHit, updateSL, updateTP, addTP, deleteTP } = useTradeTakeProfit(id);
   const { toast } = useToast();
 
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [closeOpen, setCloseOpen] = useState(false);
   const [images, setImages] = useState<TradeImage[] | null>(null);
 
+  // SL inline edit state
+  const [editingSL, setEditingSL] = useState(false);
+  const [slDraft, setSlDraft] = useState("");
+
+  // TP inline edit state
+  const [editingTPId, setEditingTPId] = useState<string | null>(null);
+  const [tpPriceDraft, setTpPriceDraft] = useState("");
+  const [tpQtyDraft, setTpQtyDraft] = useState("");
+
+  // Add TP state
+  const [addingTP, setAddingTP] = useState(false);
+  const [newTPPrice, setNewTPPrice] = useState("");
+  const [newTPQty, setNewTPQty] = useState("100");
+
   if (loading) {
     return (
       <div className="mx-auto max-w-3xl space-y-4">
         {[...Array(3)].map((_, i) => (
-          <div key={i} className="h-32 animate-pulse rounded-xl bg-surface-100" />
+          <div key={i} className="h-32 animate-pulse rounded-xl bg-surface-100 dark:bg-surface-700" />
         ))}
       </div>
     );
@@ -64,26 +99,29 @@ export default function TradeDetailPage() {
     );
   }
 
-  // Narrow trade to non-null (guards above ensure this)
   const t = trade;
-  // Sync images from fetched trade (once) then manage locally
   const displayImages = images ?? t.trade_images;
   const instrument = t.instruments;
   const pnl = t.pnl;
   const isProfit = pnl !== null && pnl >= 0;
   const isClosed = t.status === "closed";
 
+  // Use TPs from hook (live state) but fall back to joined TPs from trade fetch
+  const displayTPs = tps.length > 0 ? tps : (t.trade_take_profits ?? []);
+  const entryPrice = t.entry_price;
+  const stopLoss = t.stop_loss;
+
+  // Use first TP for R:R display in hero
+  const firstTP = displayTPs[0];
   const rr =
-    t.entry_price && t.stop_loss && t.take_profit
+    entryPrice && stopLoss && firstTP
       ? (() => {
           const risk =
-            t.direction === "long"
-              ? t.entry_price - t.stop_loss
-              : t.stop_loss - t.entry_price;
+            t.direction === "long" ? entryPrice - stopLoss : stopLoss - entryPrice;
           const reward =
             t.direction === "long"
-              ? t.take_profit - t.entry_price
-              : t.entry_price - t.take_profit;
+              ? firstTP.price - entryPrice
+              : entryPrice - firstTP.price;
           return risk > 0 && reward > 0 ? (reward / risk).toFixed(2) : null;
         })()
       : null;
@@ -116,6 +154,9 @@ export default function TradeDetailPage() {
         fees: t.fees,
         stop_loss: t.stop_loss,
         take_profit: t.take_profit,
+        leverage: t.leverage,
+        margin_mode: t.margin_mode,
+        account_id: t.account_id,
         setup_type: t.setup_type,
         entry_date: new Date().toISOString(),
         status: "open",
@@ -126,6 +167,76 @@ export default function TradeDetailPage() {
       toast((err as Error).message, "error");
     }
   }
+
+  async function handleSaveSL() {
+    try {
+      const val = slDraft === "" ? null : parseFloat(slDraft);
+      await updateSL(id, val);
+      await updateTrade(id, { stop_loss: val });
+      toast("Stop loss updated.", "success");
+      setEditingSL(false);
+      router.refresh();
+    } catch (err) {
+      toast((err as Error).message, "error");
+    }
+  }
+
+  function startEditTP(tp: TradeTakeProfit) {
+    setEditingTPId(tp.id);
+    setTpPriceDraft(String(tp.price));
+    setTpQtyDraft(String(tp.quantity_pct));
+  }
+
+  async function handleSaveTP(tpId: string) {
+    try {
+      await updateTP(tpId, {
+        price: parseFloat(tpPriceDraft),
+        quantity_pct: parseFloat(tpQtyDraft),
+      });
+      toast("Take profit updated.", "success");
+      setEditingTPId(null);
+    } catch (err) {
+      toast((err as Error).message, "error");
+    }
+  }
+
+  async function handleMarkHit(tpId: string) {
+    try {
+      await markTPHit(tpId);
+      toast("Take profit marked as hit.", "success");
+    } catch (err) {
+      toast((err as Error).message, "error");
+    }
+  }
+
+  async function handleDeleteTP(tpId: string) {
+    try {
+      await deleteTP(tpId);
+      toast("Take profit removed.", "success");
+    } catch (err) {
+      toast((err as Error).message, "error");
+    }
+  }
+
+  async function handleAddTP() {
+    try {
+      const nextLevel = displayTPs.length + 1;
+      await addTP(id, {
+        level: nextLevel,
+        price: parseFloat(newTPPrice),
+        quantity_pct: parseFloat(newTPQty) || 100,
+      });
+      toast("Take profit added.", "success");
+      setAddingTP(false);
+      setNewTPPrice("");
+      setNewTPQty("100");
+    } catch (err) {
+      toast((err as Error).message, "error");
+    }
+  }
+
+  const inputCls =
+    "rounded-lg border border-surface-300 bg-white px-2.5 py-1.5 text-sm text-surface-900 shadow-sm outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 dark:border-surface-600 dark:bg-surface-700 dark:text-surface-100";
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -166,7 +277,7 @@ export default function TradeDetailPage() {
         className={cn(
           "mb-6 rounded-2xl border p-6",
           pnl === null
-            ? "border-surface-200 bg-white"
+            ? "border-surface-200 bg-white dark:border-surface-700 dark:bg-surface-800"
             : isProfit
             ? "border-profit bg-profit-light"
             : "border-loss bg-loss-light"
@@ -175,7 +286,7 @@ export default function TradeDetailPage() {
         <div className="flex items-start justify-between">
           <div>
             <div className="flex items-center gap-3">
-              <span className="font-mono text-2xl font-bold text-surface-900">
+              <span className="font-mono text-2xl font-bold text-surface-900 dark:text-surface-50">
                 {instrument?.symbol ?? "\u2014"}
               </span>
               <span
@@ -196,6 +307,11 @@ export default function TradeDetailPage() {
               >
                 {isClosed ? "Closed" : "Open"}
               </span>
+              {t.leverage > 1 && (
+                <span className="rounded-full bg-surface-200 px-2.5 py-0.5 text-xs font-medium text-surface-600 dark:bg-surface-700 dark:text-surface-400">
+                  {t.leverage}x
+                </span>
+              )}
             </div>
             <p className="mt-1 text-sm text-surface-500">{instrument?.name}</p>
           </div>
@@ -217,16 +333,16 @@ export default function TradeDetailPage() {
         </div>
 
         {rr && (
-          <div className="mt-4 inline-flex items-center gap-2 rounded-lg bg-white/60 px-3 py-1.5">
+          <div className="mt-4 inline-flex items-center gap-2 rounded-lg bg-white/60 px-3 py-1.5 dark:bg-surface-800/60">
             <span className="text-xs text-surface-500">R:R</span>
-            <span className="text-sm font-bold text-surface-900">1 : {rr}</span>
+            <span className="text-sm font-bold text-surface-900 dark:text-surface-50">1 : {rr}</span>
           </div>
         )}
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Trade details */}
-        <section className="rounded-xl border border-surface-200 bg-white p-5 shadow-sm">
+        <section className="rounded-xl border border-surface-200 bg-white p-5 shadow-sm dark:border-surface-700 dark:bg-surface-800">
           <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-surface-400">
             Trade Details
           </h2>
@@ -237,18 +353,13 @@ export default function TradeDetailPage() {
           />
           <DetailRow label="Quantity" value={trade.quantity} />
           <DetailRow label="Fees" value={trade.fees > 0 ? formatCurrency(trade.fees) : null} />
-          <DetailRow
-            label="Stop Loss"
-            value={trade.stop_loss ? formatCurrency(trade.stop_loss) : null}
-          />
-          <DetailRow
-            label="Take Profit"
-            value={trade.take_profit ? formatCurrency(trade.take_profit) : null}
-          />
+          {t.accounts && (
+            <DetailRow label="Account" value={t.accounts.name} />
+          )}
         </section>
 
         {/* Dates & Setup */}
-        <section className="rounded-xl border border-surface-200 bg-white p-5 shadow-sm">
+        <section className="rounded-xl border border-surface-200 bg-white p-5 shadow-sm dark:border-surface-700 dark:bg-surface-800">
           <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-surface-400">
             Timing &amp; Setup
           </h2>
@@ -265,22 +376,252 @@ export default function TradeDetailPage() {
           <DetailRow label="Market Type" value={instrument?.market_type} />
         </section>
 
+        {/* Risk Management */}
+        <section className="rounded-xl border border-surface-200 bg-white p-5 shadow-sm dark:border-surface-700 dark:bg-surface-800 lg:col-span-2">
+          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-surface-400">
+            Risk Management
+          </h2>
+
+          {/* Leverage + Margin Mode */}
+          <div className="mb-3 flex flex-wrap items-center gap-3">
+            <span className="rounded-full bg-surface-100 px-3 py-1 text-sm font-medium text-surface-700 dark:bg-surface-700 dark:text-surface-300">
+              {t.leverage}x Leverage
+            </span>
+            <span className="rounded-full bg-surface-100 px-3 py-1 text-sm font-medium text-surface-700 dark:bg-surface-700 dark:text-surface-300 capitalize">
+              {t.margin_mode}
+            </span>
+          </div>
+
+          {/* Stop Loss */}
+          <div className="flex items-center justify-between border-b border-surface-100 py-3 dark:border-surface-700">
+            <span className="text-sm text-surface-500">Stop Loss</span>
+            <div className="flex items-center gap-2">
+              {editingSL ? (
+                <>
+                  <input
+                    type="number"
+                    step="any"
+                    className={inputCls}
+                    value={slDraft}
+                    onChange={(e) => setSlDraft(e.target.value)}
+                    placeholder="0.00"
+                    autoFocus
+                  />
+                  <button
+                    onClick={handleSaveSL}
+                    className="rounded-lg p-1.5 text-profit transition-colors hover:bg-profit-light"
+                  >
+                    <Check className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => setEditingSL(false)}
+                    className="rounded-lg p-1.5 text-surface-400 transition-colors hover:bg-surface-100"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </>
+              ) : (
+                <>
+                  <span className="text-sm font-medium text-surface-900 dark:text-surface-50">
+                    {stopLoss ? formatCurrency(stopLoss) : "—"}
+                  </span>
+                  <button
+                    onClick={() => {
+                      setSlDraft(stopLoss ? String(stopLoss) : "");
+                      setEditingSL(true);
+                    }}
+                    className="rounded-lg p-1.5 text-surface-400 transition-colors hover:bg-surface-100 dark:hover:bg-surface-700"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Take Profits */}
+          <div className="mt-3">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-sm text-surface-500">Take Profits</span>
+              {displayTPs.length < 5 && (
+                <button
+                  onClick={() => setAddingTP(true)}
+                  className="flex items-center gap-1 text-xs text-primary-600 hover:underline"
+                >
+                  <Plus className="h-3 w-3" /> Add TP
+                </button>
+              )}
+            </div>
+
+            {displayTPs.length === 0 && !addingTP && (
+              <p className="text-sm text-surface-400">No take profit levels set.</p>
+            )}
+
+            <div className="space-y-2">
+              {displayTPs.map((tp) => {
+                const tpPct =
+                  entryPrice > 0
+                    ? (t.direction === "long"
+                        ? ((tp.price - entryPrice) / entryPrice)
+                        : ((entryPrice - tp.price) / entryPrice)) * 100
+                    : null;
+
+                return (
+                  <div
+                    key={tp.id}
+                    className="flex flex-wrap items-center gap-2 rounded-lg bg-surface-50 px-3 py-2 dark:bg-surface-700/50"
+                  >
+                    <span className="shrink-0 rounded-md bg-primary-100 px-2 py-0.5 text-xs font-bold text-primary-700 dark:bg-primary-900/40 dark:text-primary-300">
+                      TP{tp.level}
+                    </span>
+                    <TPStatusBadge status={tp.status} />
+
+                    {editingTPId === tp.id ? (
+                      <>
+                        <input
+                          type="number"
+                          step="any"
+                          className={cn(inputCls, "w-28")}
+                          value={tpPriceDraft}
+                          onChange={(e) => setTpPriceDraft(e.target.value)}
+                          placeholder="Price"
+                          autoFocus
+                        />
+                        <input
+                          type="number"
+                          min="1"
+                          max="100"
+                          className={cn(inputCls, "w-16")}
+                          value={tpQtyDraft}
+                          onChange={(e) => setTpQtyDraft(e.target.value)}
+                          placeholder="Qty%"
+                        />
+                        <button
+                          onClick={() => handleSaveTP(tp.id)}
+                          className="rounded-lg p-1.5 text-profit transition-colors hover:bg-profit-light"
+                        >
+                          <Check className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => setEditingTPId(null)}
+                          className="rounded-lg p-1.5 text-surface-400 transition-colors hover:bg-surface-100 dark:hover:bg-surface-700"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-sm font-medium text-surface-900 dark:text-surface-50">
+                          {formatCurrency(tp.price)}
+                        </span>
+                        {tpPct !== null && (
+                          <span
+                            className={cn(
+                              "text-xs",
+                              tpPct > 0 ? "text-profit" : "text-loss"
+                            )}
+                          >
+                            {tpPct.toFixed(2)}%
+                          </span>
+                        )}
+                        <span className="text-xs text-surface-400">{tp.quantity_pct}%</span>
+                        {tp.hit_date && (
+                          <span className="text-xs text-surface-400">
+                            {new Date(tp.hit_date).toLocaleDateString()}
+                          </span>
+                        )}
+                        <div className="ml-auto flex items-center gap-1">
+                          {tp.status === "pending" && (
+                            <button
+                              onClick={() => handleMarkHit(tp.id)}
+                              title="Mark as hit"
+                              className="rounded-lg px-2 py-1 text-xs font-medium text-profit transition-colors hover:bg-profit-light"
+                            >
+                              Mark Hit
+                            </button>
+                          )}
+                          <button
+                            onClick={() => startEditTP(tp)}
+                            className="rounded-lg p-1.5 text-surface-400 transition-colors hover:bg-surface-100 dark:hover:bg-surface-700"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteTP(tp.id)}
+                            className="rounded-lg p-1.5 text-surface-400 transition-colors hover:text-loss"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Add TP inline form */}
+            {addingTP && (
+              <div className="mt-2 flex items-center gap-2 rounded-lg border border-dashed border-primary-300 p-2">
+                <span className="shrink-0 text-xs font-bold text-primary-600">
+                  TP{displayTPs.length + 1}
+                </span>
+                <input
+                  type="number"
+                  step="any"
+                  className={cn(inputCls, "flex-1")}
+                  value={newTPPrice}
+                  onChange={(e) => setNewTPPrice(e.target.value)}
+                  placeholder="Price"
+                  autoFocus
+                />
+                <input
+                  type="number"
+                  min="1"
+                  max="100"
+                  className={cn(inputCls, "w-16")}
+                  value={newTPQty}
+                  onChange={(e) => setNewTPQty(e.target.value)}
+                  placeholder="Qty%"
+                />
+                <button
+                  onClick={handleAddTP}
+                  disabled={!newTPPrice}
+                  className="rounded-lg p-1.5 text-profit transition-colors hover:bg-profit-light disabled:opacity-40"
+                >
+                  <Check className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => { setAddingTP(false); setNewTPPrice(""); }}
+                  className="rounded-lg p-1.5 text-surface-400 transition-colors hover:bg-surface-100 dark:hover:bg-surface-700"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+          </div>
+        </section>
+
         {/* Notes */}
         {(trade.notes_pre || trade.notes_post) && (
-          <section className="rounded-xl border border-surface-200 bg-white p-5 shadow-sm lg:col-span-2">
+          <section className="rounded-xl border border-surface-200 bg-white p-5 shadow-sm dark:border-surface-700 dark:bg-surface-800 lg:col-span-2">
             <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-surface-400">
               Notes
             </h2>
             {trade.notes_pre && (
               <div className="mb-4">
                 <p className="mb-1 text-xs font-medium text-surface-500">Pre-trade</p>
-                <p className="whitespace-pre-wrap text-sm text-surface-700">{trade.notes_pre}</p>
+                <p className="whitespace-pre-wrap text-sm text-surface-700 dark:text-surface-300">
+                  {trade.notes_pre}
+                </p>
               </div>
             )}
             {trade.notes_post && (
               <div>
                 <p className="mb-1 text-xs font-medium text-surface-500">Post-trade</p>
-                <p className="whitespace-pre-wrap text-sm text-surface-700">{trade.notes_post}</p>
+                <p className="whitespace-pre-wrap text-sm text-surface-700 dark:text-surface-300">
+                  {trade.notes_post}
+                </p>
               </div>
             )}
           </section>
@@ -288,7 +629,7 @@ export default function TradeDetailPage() {
 
         {/* Tags */}
         {t.trade_tags.length > 0 && (
-          <section className="rounded-xl border border-surface-200 bg-white p-5 shadow-sm">
+          <section className="rounded-xl border border-surface-200 bg-white p-5 shadow-sm dark:border-surface-700 dark:bg-surface-800">
             <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-surface-400">
               Tags
             </h2>
@@ -302,7 +643,7 @@ export default function TradeDetailPage() {
       </div>
 
       {/* Screenshots */}
-      <section className="mt-6 rounded-xl border border-surface-200 bg-white p-5 shadow-sm">
+      <section className="mt-6 rounded-xl border border-surface-200 bg-white p-5 shadow-sm dark:border-surface-700 dark:bg-surface-800">
         <h2 className="mb-4 text-xs font-semibold uppercase tracking-wide text-surface-400">
           Screenshots
         </h2>

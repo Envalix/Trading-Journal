@@ -89,6 +89,7 @@ export function FilterPanel({ filters, onChange, tags, instruments }: FilterPane
         <ToggleGroup
           options={[
             { value: "all", label: "All" },
+            { value: "draft", label: "Draft" },
             { value: "open", label: "Open" },
             { value: "closed", label: "Closed" },
           ]}

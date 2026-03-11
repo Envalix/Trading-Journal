@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { TradeForm } from "@/components/trades/trade-form";
 
 export default function NewTradePage() {
@@ -8,7 +9,9 @@ export default function NewTradePage() {
         <p className="mt-1 text-sm text-surface-500">Log a new trade entry</p>
       </div>
 
-      <TradeForm />
+      <Suspense fallback={<div className="animate-pulse rounded-xl bg-surface-100 h-96 dark:bg-surface-800" />}>
+        <TradeForm />
+      </Suspense>
     </div>
   );
 }

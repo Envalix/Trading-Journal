@@ -113,7 +113,14 @@ function ActionMenu({
             >
               <Copy className="h-3.5 w-3.5" /> Duplicate
             </button>
-            {trade.status === "open" ? (
+            {trade.status === "draft" ? (
+              <button
+                onClick={() => { setOpen(false); onReopen(); }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-profit hover:bg-profit-light"
+              >
+                <RefreshCw className="h-3.5 w-3.5" /> Enter Trade
+              </button>
+            ) : trade.status === "open" ? (
               <button
                 onClick={() => { setOpen(false); onClose(); }}
                 className="flex w-full items-center gap-2 px-3 py-2 text-sm text-surface-700 hover:bg-surface-50"
@@ -279,7 +286,9 @@ export function TradesTable({
                   <span
                     className={cn(
                       "rounded-full px-2 py-0.5 text-xs font-medium",
-                      trade.status === "open"
+                      trade.status === "draft"
+                        ? "bg-yellow-50 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
+                        : trade.status === "open"
                         ? "bg-primary-50 text-primary-600"
                         : "bg-surface-100 text-surface-500"
                     )}

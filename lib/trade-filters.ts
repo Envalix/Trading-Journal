@@ -5,7 +5,7 @@
 import type { TradeWithRelations } from "@/types/database";
 
 export interface TradeFilters {
-  status: "all" | "open" | "closed";
+  status: "all" | "draft" | "open" | "closed";
   direction: "all" | "long" | "short";
   market: string; // "all" | MarketType
   dateFrom: string; // YYYY-MM-DD

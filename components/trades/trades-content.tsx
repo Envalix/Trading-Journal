@@ -185,7 +185,7 @@ export function TradesContent() {
           status: "open",
         });
         setTrades((prev) => [
-          { ...created, instruments: trade.instruments, trade_tags: [], trade_images: [] } as TradeWithRelations,
+          { ...created, instruments: trade.instruments, trade_tags: [], trade_images: [], trade_take_profits: [], accounts: null } as unknown as TradeWithRelations,
           ...prev,
         ]);
         toast("Trade duplicated.", "success");
