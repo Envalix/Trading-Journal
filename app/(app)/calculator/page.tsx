@@ -309,20 +309,14 @@ export default function CalculatorPage() {
           </div>
           {maxLeverage !== null && (
             <p className="mt-1.5 text-xs text-surface-400">
-              Max safe leverage (from SL):{" "}
-              <button
-                type="button"
-                className="font-medium text-primary-600 hover:underline"
-                onClick={() => setLeverage(String(maxLeverage))}
-              >
-                {maxLeverage}x
-              </button>
+              Theoretical max (liq = SL):{" "}
+              <span className="font-medium text-loss">{maxLeverage}x</span>
               {safeLeverage !== null && safeLeverage !== maxLeverage && (
                 <>
-                  {" · "}Risk-adjusted:{" "}
+                  {" · "}Recommended:{" "}
                   <button
                     type="button"
-                    className="font-medium text-primary-600 hover:underline"
+                    className="font-medium text-profit hover:underline"
                     onClick={() => setLeverage(String(safeLeverage))}
                   >
                     {safeLeverage}x
@@ -546,37 +540,54 @@ export default function CalculatorPage() {
 
       {/* Best Safe Leverage — prominent display */}
       {maxLeverage !== null && (
-        <div className="rounded-xl border border-surface-200 bg-white p-6 text-center shadow-sm dark:border-surface-700 dark:bg-surface-800">
-          <p className="text-xs font-semibold uppercase tracking-widest text-surface-400">
-            Max Safe Leverage
+        <div className="rounded-xl border border-surface-200 bg-white p-6 shadow-sm dark:border-surface-700 dark:bg-surface-800">
+          <div className="grid gap-4 sm:grid-cols-2">
+            {/* Theoretical max — informational only */}
+            <div className="rounded-lg border border-loss/30 bg-loss-light p-4 text-center">
+              <p className="text-xs font-semibold uppercase tracking-widest text-loss">
+                Theoretical Max
+              </p>
+              <p className="mt-1 text-4xl font-extrabold text-loss">
+                {maxLeverage}
+                <span className="text-xl font-bold">x</span>
+              </p>
+              <p className="mt-1 text-xs text-loss/70">
+                Liq. price = SL at this leverage.
+                <br />Using this risks ~100% of margin.
+              </p>
+            </div>
+
+            {/* Safe / risk-adjusted leverage */}
+            <div className="rounded-lg border border-profit/30 bg-profit-light p-4 text-center">
+              <p className="text-xs font-semibold uppercase tracking-widest text-profit">
+                {safeLeverage !== null && safeLeverage !== maxLeverage
+                  ? "Risk-Adjusted"
+                  : "Safe Leverage"}
+              </p>
+              {safeLeverage !== null && safeLeverage !== maxLeverage ? (
+                <>
+                  <p className="mt-1 text-4xl font-extrabold text-profit">
+                    {safeLeverage}
+                    <span className="text-xl font-bold">x</span>
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setLeverage(String(safeLeverage))}
+                    className="mt-2 rounded-lg bg-profit px-4 py-1.5 text-sm font-medium text-white transition-colors hover:opacity-90"
+                  >
+                    Use {safeLeverage}x
+                  </button>
+                </>
+              ) : (
+                <p className="mt-2 text-sm text-surface-400">
+                  Set margin + risk tolerance to get a recommendation
+                </p>
+              )}
+            </div>
+          </div>
+          <p className="mt-3 text-center text-xs text-surface-400">
+            SL distance: {slPctFromEntry !== null ? `${Math.abs(slPctFromEntry).toFixed(2)}%` : "—"} from entry
           </p>
-          <p className="mt-2 text-6xl font-extrabold text-primary-600">
-            {maxLeverage}
-            <span className="text-2xl font-bold text-surface-400">x</span>
-          </p>
-          <p className="mt-1 text-xs text-surface-400">
-            Based on Entry ({entryPrice}) &amp; Stop Loss ({stopLoss}) — SL distance{" "}
-            {slPctFromEntry !== null ? `${Math.abs(slPctFromEntry).toFixed(2)}%` : "—"}
-          </p>
-          {safeLeverage !== null && safeLeverage !== maxLeverage && (
-            <p className="mt-2 text-sm text-surface-500">
-              Risk-adjusted suggestion:{" "}
-              <button
-                type="button"
-                className="font-bold text-primary-600 hover:underline"
-                onClick={() => setLeverage(String(safeLeverage))}
-              >
-                {safeLeverage}x
-              </button>
-            </p>
-          )}
-          <button
-            type="button"
-            onClick={() => setLeverage(String(maxLeverage))}
-            className="mt-3 rounded-lg bg-primary-600 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-primary-700"
-          >
-            Use {maxLeverage}x Leverage
-          </button>
         </div>
       )}
 

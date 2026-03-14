@@ -233,6 +233,10 @@ export function TradeForm({ trade }: Readonly<TradeFormProps>) {
           ? ((slNum - entryNum) / entryNum)
           : ((entryNum - slNum) / entryNum)) * 100
       : null;
+  const slRisk =
+    entryNum > 0 && slNum > 0 && Number(wQty) > 0
+      ? Math.abs(entryNum - slNum) * Number(wQty) * leverageValue
+      : null;
 
   async function resolveInstrumentId(instrumentId: string): Promise<string> {
     if (!isExchangeInstrumentId(instrumentId)) return instrumentId;
@@ -646,6 +650,11 @@ export function TradeForm({ trade }: Readonly<TradeFormProps>) {
           {slPct !== null && (
             <p className={cn("mt-1 text-xs", slPct < 0 ? "text-loss" : "text-profit")}>
               {slPct.toFixed(2)}% from entry
+              {slRisk != null && slRisk > 0 && (
+                <span className="ml-1 text-surface-400">
+                  ({formatCurrency(slRisk)} risk)
+                </span>
+              )}
             </p>
           )}
         </div>
