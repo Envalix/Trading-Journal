@@ -150,6 +150,7 @@ export interface Database {
           take_profit: number | null;
           leverage: number;
           margin_mode: string;
+          additional_margin: number;
           fees: number;
           entry_date: string;
           exit_date: string | null;
@@ -177,6 +178,7 @@ export interface Database {
           take_profit?: number | null;
           leverage?: number;
           margin_mode?: string;
+          additional_margin?: number;
           fees?: number;
           entry_date: string;
           exit_date?: string | null;
@@ -202,6 +204,7 @@ export interface Database {
           take_profit?: number | null;
           leverage?: number;
           margin_mode?: string;
+          additional_margin?: number;
           fees?: number;
           entry_date?: string;
           exit_date?: string | null;

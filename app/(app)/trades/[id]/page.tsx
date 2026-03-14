@@ -76,6 +76,10 @@ export default function TradeDetailPage() {
   const [newTPPrice, setNewTPPrice] = useState("");
   const [newTPQty, setNewTPQty] = useState("100");
 
+  // Add Margin state (isolated trades only)
+  const [addMarginAmount, setAddMarginAmount] = useState("");
+  const [addingMargin, setAddingMargin] = useState(false);
+
   if (loading) {
     return (
       <div className="mx-auto max-w-3xl space-y-4">
@@ -235,6 +239,24 @@ export default function TradeDetailPage() {
     }
   }
 
+  async function handleAddMargin() {
+    const amount = parseFloat(addMarginAmount);
+    if (!amount || amount <= 0) return;
+    setAddingMargin(true);
+    try {
+      await updateTrade(id, {
+        additional_margin: (t.additional_margin ?? 0) + amount,
+      });
+      toast(`Added ${formatCurrency(amount)} margin.`, "success");
+      setAddMarginAmount("");
+      router.refresh();
+    } catch (err) {
+      toast((err as Error).message, "error");
+    } finally {
+      setAddingMargin(false);
+    }
+  }
+
   const inputCls =
     "rounded-lg border border-surface-300 bg-white px-2.5 py-1.5 text-sm text-surface-900 shadow-sm outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 dark:border-surface-600 dark:bg-surface-700 dark:text-surface-100";
 
@@ -391,6 +413,44 @@ export default function TradeDetailPage() {
               {t.margin_mode}
             </span>
           </div>
+
+          {/* Add Margin — isolated open trades only */}
+          {!isClosed && t.margin_mode === "isolated" && (
+            <div className="mb-3 rounded-lg border border-surface-200 bg-surface-50 px-4 py-3 dark:border-surface-700 dark:bg-surface-700/40">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium text-surface-700 dark:text-surface-300">
+                    Margin
+                  </p>
+                  {(t.additional_margin ?? 0) > 0 && (
+                    <p className="mt-0.5 text-xs text-surface-400">
+                      +{formatCurrency(t.additional_margin ?? 0)} added
+                    </p>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    className={cn(inputCls, "w-28")}
+                    value={addMarginAmount}
+                    onChange={(e) => setAddMarginAmount(e.target.value)}
+                    placeholder="Amount"
+                    onKeyDown={(e) => e.key === "Enter" && handleAddMargin()}
+                  />
+                  <Button
+                    size="sm"
+                    onClick={handleAddMargin}
+                    loading={addingMargin}
+                    disabled={!addMarginAmount || parseFloat(addMarginAmount) <= 0}
+                  >
+                    <Plus className="h-3.5 w-3.5" /> Add Margin
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Stop Loss */}
           <div className="flex items-center justify-between border-b border-surface-100 py-3 dark:border-surface-700">
