@@ -235,7 +235,7 @@ export function TradeForm({ trade }: Readonly<TradeFormProps>) {
       : null;
   const slRisk =
     entryNum > 0 && slNum > 0 && Number(wQty) > 0
-      ? Math.abs(entryNum - slNum) * Number(wQty) * leverageValue
+      ? Math.abs(entryNum - slNum) * Number(wQty) * (Number(watch("leverage")) || 1)
       : null;
 
   async function resolveInstrumentId(instrumentId: string): Promise<string> {
