@@ -5,7 +5,7 @@ import { useController, useFieldArray, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Loader2, Plus, X } from "lucide-react";
+import { AlertTriangle, Loader2, Plus, X } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { InstrumentSelector } from "@/components/instruments/instrument-selector";
@@ -20,7 +20,9 @@ import { useExchangeInstruments, isExchangeInstrumentId } from "@/hooks/use-exch
 import { useTags, setTradeTags } from "@/hooks/use-tags";
 import { useAccounts } from "@/hooks/use-accounts";
 import { useTradeTakeProfit } from "@/hooks/use-trade-take-profits";
+import { usePlaybooks } from "@/hooks/use-playbooks";
 import { useToast } from "@/contexts/toast-context";
+import { createClient } from "@/lib/supabase-browser";
 import { SETUP_TYPES } from "@/constants/instruments";
 import { PLATFORM_GROUPS, getPlatform } from "@/constants/platforms";
 import { cn, formatCurrency } from "@/lib/utils";
@@ -96,6 +98,7 @@ export function TradeForm({ trade }: Readonly<TradeFormProps>) {
   const { instruments: dbInstruments, favoriteIds, addCustom } = useInstruments();
   const { tags } = useTags();
   const { accounts } = useAccounts();
+  const { playbooks } = usePlaybooks();
   const { upsertTPs } = useTradeTakeProfit(trade?.id ?? null);
   const { toast } = useToast();
 
@@ -104,6 +107,44 @@ export function TradeForm({ trade }: Readonly<TradeFormProps>) {
   );
   const [selectedPlatform, setSelectedPlatform] = useState<string>(
     trade?.platform ?? ""
+  );
+  const [selectedPlaybookIds, setSelectedPlaybookIds] = useState<string[]>(
+    () => trade?.trade_playbooks?.map((tp) => tp.playbook_id) ?? []
+  );
+  // rule_id → followed
+  const [ruleChecks, setRuleChecks] = useState<Record<string, boolean>>({});
+
+  const selectedPlaybooks = playbooks.filter((p) => selectedPlaybookIds.includes(p.id));
+
+  // Load existing rule checks when editing
+  useEffect(() => {
+    if (!trade?.id || !trade.trade_playbooks?.length) return;
+    const supabase = createClient();
+    supabase
+      .from("trade_rule_checks")
+      .select("rule_id, is_followed")
+      .eq("trade_id", trade.id)
+      .then(({ data }) => {
+        if (data) {
+          const map: Record<string, boolean> = {};
+          data.forEach((r) => { map[r.rule_id] = r.is_followed; });
+          setRuleChecks(map);
+        }
+      });
+  }, [trade?.id, trade?.trade_playbooks?.length]);
+
+  function togglePlaybookSelection(id: string) {
+    setSelectedPlaybookIds((prev) =>
+      prev.includes(id) ? prev.filter((pid) => pid !== id) : [...prev, id]
+    );
+  }
+
+  function toggleRule(ruleId: string) {
+    setRuleChecks((prev) => ({ ...prev, [ruleId]: !prev[ruleId] }));
+  }
+
+  const hasUncheckedRequired = selectedPlaybooks.some((p) =>
+    p.playbook_rules.some((r) => r.is_required && !ruleChecks[r.id])
   );
 
   const platformDef = getPlatform(selectedPlatform);
@@ -286,6 +327,46 @@ export function TradeForm({ trade }: Readonly<TradeFormProps>) {
     };
   }
 
+  async function savePlaybookData(tradeId: string) {
+    const supabase = createClient();
+
+    // Sync junction table: delete old rows, insert new
+    await supabase.from("trade_playbooks").delete().eq("trade_id", tradeId);
+    if (selectedPlaybookIds.length > 0) {
+      await supabase.from("trade_playbooks").insert(
+        selectedPlaybookIds.map((pid) => ({ trade_id: tradeId, playbook_id: pid }))
+      );
+    }
+
+    // Delete old rule checks
+    await supabase.from("trade_rule_checks").delete().eq("trade_id", tradeId);
+
+    // Upsert grade + rule checks per playbook
+    for (const playbook of selectedPlaybooks) {
+      const rules = playbook.playbook_rules;
+      const requiredRules = rules.filter((r) => r.is_required);
+      const followedRequired = requiredRules.filter((r) => ruleChecks[r.id]).length;
+      const gradeScore = requiredRules.length > 0
+        ? (followedRequired / requiredRules.length) * 100
+        : 100;
+
+      await supabase.from("trade_playbook_grades").upsert(
+        { trade_id: tradeId, playbook_id: playbook.id, grade_score: gradeScore },
+        { onConflict: "trade_id,playbook_id" }
+      );
+
+      if (rules.length > 0) {
+        await supabase.from("trade_rule_checks").insert(
+          rules.map((r) => ({
+            trade_id: tradeId,
+            rule_id: r.id,
+            is_followed: ruleChecks[r.id] ?? false,
+          }))
+        );
+      }
+    }
+  }
+
   async function saveTrade(data: FormData, statusOverride?: TradeStatus) {
     try {
       const resolvedInstrumentId = await resolveInstrumentId(data.instrument_id);
@@ -296,6 +377,7 @@ export function TradeForm({ trade }: Readonly<TradeFormProps>) {
         await updateTrade(trade.id, payload);
         await setTradeTags(trade.id, tagIds);
         await upsertTPs(trade.id, tpsToSave);
+        await savePlaybookData(trade.id);
         const msg = statusOverride === "open" && isDraft
           ? "Trade entered!"
           : "Trade updated successfully!";
@@ -305,6 +387,7 @@ export function TradeForm({ trade }: Readonly<TradeFormProps>) {
         const created = await createTrade(payload);
         if (tagIds.length > 0) await setTradeTags(created.id, tagIds);
         if (tpsToSave.length > 0) await upsertTPs(created.id, tpsToSave);
+        await savePlaybookData(created.id);
         const msg = statusOverride === "draft"
           ? "Draft saved!"
           : "Trade saved successfully!";
@@ -759,6 +842,68 @@ export function TradeForm({ trade }: Readonly<TradeFormProps>) {
         <h2 className="mb-5 text-sm font-semibold uppercase tracking-wide text-surface-500">
           Setup &amp; Psychology
         </h2>
+
+        {/* Playbook multi-select */}
+        {playbooks.length > 0 && (
+          <div className="mb-4">
+            <Label>Playbook / Strategy</Label>
+            <div className="mt-1.5 space-y-1.5 rounded-lg border border-surface-200 bg-surface-50 px-3 py-2 dark:border-surface-600 dark:bg-surface-700/50">
+              {playbooks.map((p) => (
+                <label key={p.id} className="flex cursor-pointer items-center gap-2.5">
+                  <input
+                    type="checkbox"
+                    checked={selectedPlaybookIds.includes(p.id)}
+                    onChange={() => togglePlaybookSelection(p.id)}
+                    className="h-4 w-4 rounded border-surface-300 text-primary-600 focus:ring-primary-500"
+                  />
+                  <span className="text-sm text-surface-700 dark:text-surface-200">{p.name}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Rule checklists — one section per selected playbook */}
+        {selectedPlaybooks.map((playbook) => (
+          playbook.playbook_rules.length > 0 && (
+            <div
+              key={playbook.id}
+              className="mb-4 rounded-lg border border-surface-200 bg-surface-50 p-4 dark:border-surface-600 dark:bg-surface-700/50"
+            >
+              <p className="mb-3 text-xs font-medium uppercase tracking-wide text-surface-500">
+                Rule Checklist — {playbook.name}
+              </p>
+              <div className="space-y-2">
+                {playbook.playbook_rules.map((rule) => (
+                  <label key={rule.id} className="flex cursor-pointer items-start gap-2.5">
+                    <input
+                      type="checkbox"
+                      checked={ruleChecks[rule.id] ?? false}
+                      onChange={() => toggleRule(rule.id)}
+                      className="mt-0.5 h-4 w-4 rounded border-surface-300 text-primary-600 focus:ring-primary-500"
+                    />
+                    <span className="text-sm text-surface-700 dark:text-surface-200">
+                      {rule.rule_text}
+                      {rule.is_required && (
+                        <span className="ml-1 text-xs font-semibold text-loss">*</span>
+                      )}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )
+        ))}
+
+        {hasUncheckedRequired && (
+          <div className="mb-4 flex items-center gap-2 rounded-md border border-yellow-300 bg-yellow-50 px-3 py-2 dark:border-yellow-700 dark:bg-yellow-900/20">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-yellow-600" />
+            <p className="text-xs text-yellow-700 dark:text-yellow-400">
+              Some required rules are unchecked — this will impact your Discipline Score.
+            </p>
+          </div>
+        )}
+
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <Label htmlFor="setup_type">Setup Type</Label>

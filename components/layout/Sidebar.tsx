@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { BarChart2, BookOpen, Calculator, Layers, LayoutDashboard, LogOut, PlusCircle, Settings, Tag, Wallet } from "lucide-react";
+import { BarChart2, BookOpen, Calculator, Layers, LayoutDashboard, LogOut, Map, PlusCircle, Settings, Tag, Wallet } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 
 const navItems = [
@@ -10,6 +10,7 @@ const navItems = [
   { href: "/accounts", label: "Accounts", icon: Wallet },
   { href: "/trades", label: "Trades", icon: BookOpen },
   { href: "/trades/new", label: "New Trade", icon: PlusCircle },
+  { href: "/playbooks", label: "Playbooks", icon: Map },
   { href: "/instruments", label: "Instruments", icon: Layers },
   { href: "/tags", label: "Tags", icon: Tag },
   { href: "/calculator", label: "Calculator", icon: Calculator },

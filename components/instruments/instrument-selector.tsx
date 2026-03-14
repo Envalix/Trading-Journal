@@ -17,6 +17,9 @@ const TYPE_TABS: { id: TypeTab; label: string }[] = [
   { id: "custom",  label: "Custom" },
 ];
 
+const QUOTE_FILTERS = ["ALL", "PERP", "USDT", "USDC", "BTC", "ETH", "BNB"] as const;
+type QuoteFilter = (typeof QUOTE_FILTERS)[number];
+
 interface InstrumentSelectorProps {
   instruments: Instrument[];
   favoriteIds: Set<string>;
@@ -44,6 +47,7 @@ export function InstrumentSelector({
   const [activeTab, setActiveTab] = useState<TypeTab>(
     filterByType ?? "all"
   );
+  const [quoteFilter, setQuoteFilter] = useState<QuoteFilter>("PERP");
 
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -74,7 +78,22 @@ export function InstrumentSelector({
     return instruments.filter((i) => i.market_type === activeTab);
   })();
 
-  const filtered = tabFiltered.filter((i) => {
+  const quoteFiltered = (() => {
+    if (activeTab !== "crypto" || quoteFilter === "ALL") return tabFiltered;
+    if (quoteFilter === "PERP") {
+      return tabFiltered.filter((i) =>
+        i.symbol.toLowerCase().includes("_perp") || i.name.toLowerCase().includes("perp")
+      );
+    }
+    const q = quoteFilter.toLowerCase();
+    return tabFiltered.filter((i) => {
+      const sym = i.symbol.toLowerCase();
+      const name = i.name.toLowerCase();
+      return sym.endsWith(q) || name.includes(`/${q} `) || name.endsWith(`/${q}`);
+    });
+  })();
+
+  const filtered = quoteFiltered.filter((i) => {
     if (!query) return true;
     const q = query.toLowerCase();
     return i.symbol.toLowerCase().includes(q) || i.name.toLowerCase().includes(q);
@@ -135,6 +154,8 @@ export function InstrumentSelector({
   function handleTabClick(tab: TypeTab) {
     setActiveTab(tab);
     setHighlighted(0);
+    if (tab === "crypto") setQuoteFilter("PERP");
+    else setQuoteFilter("ALL");
     setTimeout(() => inputRef.current?.focus(), 0);
   }
 
@@ -207,6 +228,27 @@ export function InstrumentSelector({
               </button>
             ))}
           </div>
+
+          {/* Quote currency filter — visible only in Crypto tab */}
+          {activeTab === "crypto" && (
+            <div className="flex gap-1 overflow-x-auto border-b border-surface-100 px-2 py-1.5 dark:border-surface-700">
+              {QUOTE_FILTERS.map((q) => (
+                <button
+                  key={q}
+                  type="button"
+                  onClick={() => { setQuoteFilter(q); setHighlighted(0); }}
+                  className={cn(
+                    "shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors",
+                    quoteFilter === q
+                      ? "bg-primary-500 text-white"
+                      : "bg-surface-100 text-surface-500 hover:bg-surface-200 dark:bg-surface-700 dark:text-surface-400 dark:hover:bg-surface-600"
+                  )}
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* Search */}
           <div className="flex items-center gap-2 border-b border-surface-100 px-3 py-2 dark:border-surface-700">

@@ -26,46 +26,82 @@ async function fetchSymbols(platform: string): Promise<ExchangeSymbol[]> {
   switch (platform) {
     /* ─── Binance ─────────────────────────────────────────────────── */
     case "binance": {
-      const res = await fetch("https://api.binance.com/api/v3/exchangeInfo", {
-        next: { revalidate: 3600 },
+      const [spotRes, futuresRes] = await Promise.allSettled([
+        fetch("https://api.binance.com/api/v3/exchangeInfo", { next: { revalidate: 3600 } }),
+        fetch("https://fapi.binance.com/fapi/v1/exchangeInfo", { next: { revalidate: 3600 } }),
+      ]);
+
+      const spotSymbols: ExchangeSymbol[] =
+        spotRes.status === "fulfilled"
+          ? ((await spotRes.value.json()).symbols as BinanceSymbol[])
+              .filter((s) => s.status === "TRADING")
+              .map((s) => ({ symbol: s.symbol, name: `${s.baseAsset}/${s.quoteAsset}`, market_type: "crypto" as const }))
+          : [];
+
+      const futuresSymbols: ExchangeSymbol[] =
+        futuresRes.status === "fulfilled"
+          ? ((await futuresRes.value.json()).symbols as BinanceFuturesSymbol[])
+              .filter((s) => s.status === "TRADING" && s.contractType === "PERPETUAL")
+              .map((s) => ({ symbol: s.symbol, name: `${s.baseAsset}/${s.quoteAsset} Perp`, market_type: "crypto" as const }))
+          : [];
+
+      // Merge, deduplicate by symbol
+      const seen = new Set<string>();
+      return [...spotSymbols, ...futuresSymbols].filter((s) => {
+        if (seen.has(s.symbol)) return false;
+        seen.add(s.symbol);
+        return true;
       });
-      const data = await res.json();
-      return (data.symbols as BinanceSymbol[])
-        .filter((s) => s.status === "TRADING")
-        .map((s) => ({
-          symbol: s.symbol,
-          name: `${s.baseAsset}/${s.quoteAsset}`,
-          market_type: "crypto",
-        }));
     }
 
-    /* ─── MEXC (same REST v3 format as Binance) ───────────────────── */
+    /* ─── MEXC ────────────────────────────────────────────────────── */
     case "mexc": {
-      const res = await fetch("https://api.mexc.com/api/v3/exchangeInfo", {
+      const res = await fetch("https://contract.mexc.com/api/v1/contract/detail", {
         next: { revalidate: 3600 },
       });
       const data = await res.json();
-      return (data.symbols as BinanceSymbol[])
-        .filter((s) => s.status === "ENABLED" || s.status === "TRADING")
+      return ((data.data ?? []) as MexcContractSymbol[])
+        .filter((s) => s.state === 0)
         .map((s) => ({
-          symbol: s.symbol,
-          name: `${s.baseAsset}/${s.quoteAsset}`,
-          market_type: "crypto",
+          symbol: `${s.baseCoin}${s.quoteCoin}_PERP`,
+          name: `${s.baseCoin}/${s.quoteCoin} Perp`,
+          market_type: "crypto" as const,
         }));
     }
 
     /* ─── Bybit ───────────────────────────────────────────────────── */
     case "bybit": {
-      const res = await fetch(
-        "https://api.bybit.com/v5/market/instruments-info?category=spot&limit=1000",
-        { next: { revalidate: 3600 } }
-      );
-      const data = await res.json();
-      return ((data.result?.list ?? []) as BybitSymbol[]).map((s) => ({
-        symbol: s.symbol,
-        name: `${s.baseCoin}/${s.quoteCoin}`,
-        market_type: "crypto",
-      }));
+      const [spotRes, linearRes] = await Promise.allSettled([
+        fetch("https://api.bybit.com/v5/market/instruments-info?category=spot&limit=1000", { next: { revalidate: 3600 } }),
+        fetch("https://api.bybit.com/v5/market/instruments-info?category=linear&limit=1000", { next: { revalidate: 3600 } }),
+      ]);
+
+      const spotSymbols: ExchangeSymbol[] =
+        spotRes.status === "fulfilled"
+          ? ((await spotRes.value.json()).result?.list ?? [] as BybitSymbol[]).map((s: BybitSymbol) => ({
+              symbol: s.symbol,
+              name: `${s.baseCoin}/${s.quoteCoin}`,
+              market_type: "crypto" as const,
+            }))
+          : [];
+
+      const linearSymbols: ExchangeSymbol[] =
+        linearRes.status === "fulfilled"
+          ? ((await linearRes.value.json()).result?.list ?? [] as BybitSymbol[])
+              .filter((s: BybitSymbol) => s.quoteCoin === "USDT")
+              .map((s: BybitSymbol) => ({
+                symbol: s.symbol,
+                name: `${s.baseCoin}/${s.quoteCoin} Perp`,
+                market_type: "crypto" as const,
+              }))
+          : [];
+
+      const seen = new Set<string>();
+      return [...spotSymbols, ...linearSymbols].filter((s) => {
+        if (seen.has(s.symbol)) return false;
+        seen.add(s.symbol);
+        return true;
+      });
     }
 
     /* ─── OKX ─────────────────────────────────────────────────────── */
@@ -154,6 +190,14 @@ interface BinanceSymbol {
   quoteAsset: string;
 }
 
+interface BinanceFuturesSymbol {
+  symbol: string;
+  status: string;
+  contractType: string;
+  baseAsset: string;
+  quoteAsset: string;
+}
+
 interface BybitSymbol {
   symbol: string;
   baseCoin: string;
@@ -183,4 +227,11 @@ interface GatePair {
   id: string;
   base: string;
   quote: string;
+}
+
+interface MexcContractSymbol {
+  symbol: string;
+  baseCoin: string;
+  quoteCoin: string;
+  state: number; // 0 = active
 }

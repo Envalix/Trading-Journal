@@ -308,6 +308,113 @@ export interface Database {
         };
         Relationships: [];
       };
+
+      playbooks: {
+        Row: {
+          id: string;
+          user_id: string;
+          name: string;
+          description: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          name: string;
+          description?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          name?: string;
+          description?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+
+      playbook_rules: {
+        Row: {
+          id: string;
+          playbook_id: string;
+          rule_text: string;
+          is_required: boolean;
+          order_index: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          playbook_id: string;
+          rule_text: string;
+          is_required?: boolean;
+          order_index?: number;
+          created_at?: string;
+        };
+        Update: {
+          rule_text?: string;
+          is_required?: boolean;
+          order_index?: number;
+        };
+        Relationships: [];
+      };
+
+      trade_playbook_grades: {
+        Row: {
+          id: string;
+          trade_id: string;
+          playbook_id: string;
+          grade_score: number | null;
+          ai_feedback: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          trade_id: string;
+          playbook_id: string;
+          grade_score?: number | null;
+          ai_feedback?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          grade_score?: number | null;
+          ai_feedback?: string | null;
+        };
+        Relationships: [];
+      };
+
+      trade_rule_checks: {
+        Row: {
+          trade_id: string;
+          rule_id: string;
+          is_followed: boolean;
+        };
+        Insert: {
+          trade_id: string;
+          rule_id: string;
+          is_followed: boolean;
+        };
+        Update: {
+          is_followed?: boolean;
+        };
+        Relationships: [];
+      };
+
+      trade_playbooks: {
+        Row: {
+          trade_id: string;
+          playbook_id: string;
+        };
+        Insert: {
+          trade_id: string;
+          playbook_id: string;
+        };
+        Update: {
+          trade_id?: string;
+          playbook_id?: string;
+        };
+        Relationships: [];
+      };
     };
 
     Views: {
@@ -353,6 +460,25 @@ export type AccountUpdate = Database["public"]["Tables"]["accounts"]["Update"];
 export type InstrumentUpdate = Database["public"]["Tables"]["instruments"]["Update"];
 export type TradeTakeProfitUpdate = Database["public"]["Tables"]["trade_take_profits"]["Update"];
 
+// Playbook types
+export type Playbook = Database["public"]["Tables"]["playbooks"]["Row"];
+export type PlaybookRule = Database["public"]["Tables"]["playbook_rules"]["Row"];
+export type TradePlaybookGrade = Database["public"]["Tables"]["trade_playbook_grades"]["Row"];
+export type TradeRuleCheck = Database["public"]["Tables"]["trade_rule_checks"]["Row"];
+
+export type PlaybookInsert = Database["public"]["Tables"]["playbooks"]["Insert"];
+export type PlaybookRuleInsert = Database["public"]["Tables"]["playbook_rules"]["Insert"];
+export type TradePlaybookGradeInsert = Database["public"]["Tables"]["trade_playbook_grades"]["Insert"];
+export type TradeRuleCheckInsert = Database["public"]["Tables"]["trade_rule_checks"]["Insert"];
+
+export type PlaybookUpdate = Database["public"]["Tables"]["playbooks"]["Update"];
+
+export type PlaybookWithRules = Playbook & {
+  playbook_rules: PlaybookRule[];
+};
+
+export type TradePlaybooks = Database["public"]["Tables"]["trade_playbooks"]["Row"];
+
 // Joined types (for queries with relations)
 export type TradeWithRelations = Trade & {
   instruments: Instrument | null;
@@ -360,4 +486,6 @@ export type TradeWithRelations = Trade & {
   trade_images: TradeImage[];
   trade_take_profits: TradeTakeProfit[];
   accounts: Account | null;
+  trade_playbook_grades: TradePlaybookGrade[];
+  trade_playbooks: Array<{ playbook_id: string; playbooks: PlaybookWithRules }>;
 };

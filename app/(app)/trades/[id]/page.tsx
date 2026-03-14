@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Check, Copy, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react";
@@ -9,10 +9,12 @@ import { useUpdateTrade } from "@/hooks/use-update-trade";
 import { useCreateTrade } from "@/hooks/use-create-trade";
 import { useTradeTakeProfit } from "@/hooks/use-trade-take-profits";
 import { useToast } from "@/contexts/toast-context";
+import { createClient } from "@/lib/supabase-browser";
 import { DeleteConfirmModal } from "@/components/trades/delete-confirm-modal";
 import { CloseTradeModal } from "@/components/trades/close-trade-modal";
 import { ImageGallery } from "@/components/trades/image-gallery";
 import { ImageUploader } from "@/components/trades/image-uploader";
+import { ChartInspector } from "@/components/ai-coach/chart-inspector";
 import { TagChip } from "@/components/tags/tag-chip";
 import { Button } from "@/components/ui/button";
 import { cn, formatCurrency } from "@/lib/utils";
@@ -61,6 +63,23 @@ export default function TradeDetailPage() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [closeOpen, setCloseOpen] = useState(false);
   const [images, setImages] = useState<TradeImage[] | null>(null);
+  const [ruleChecks, setRuleChecks] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    if (!trade?.id || !trade.trade_playbooks?.length) return;
+    const supabase = createClient();
+    supabase
+      .from("trade_rule_checks")
+      .select("rule_id, is_followed")
+      .eq("trade_id", trade.id)
+      .then(({ data }) => {
+        if (data) {
+          const map: Record<string, boolean> = {};
+          data.forEach((r) => { map[r.rule_id] = r.is_followed; });
+          setRuleChecks(map);
+        }
+      });
+  }, [trade?.id, trade?.trade_playbooks?.length]);
 
   // SL inline edit state
   const [editingSL, setEditingSL] = useState(false);
@@ -716,6 +735,74 @@ export default function TradeDetailPage() {
         )}
       </div>
 
+      {/* Playbook Grades */}
+      {t.trade_playbooks?.length > 0 && (
+        <section className="mt-6 space-y-4">
+          {t.trade_playbooks.map(({ playbook_id, playbooks: playbook }) => {
+            const grade = (t.trade_playbook_grades ?? []).find((g) => g.playbook_id === playbook_id);
+            const score = grade?.grade_score ?? null;
+            const color =
+              score === null
+                ? ""
+                : score >= 80
+                  ? "bg-profit-light text-profit-dark"
+                  : score >= 50
+                    ? "bg-yellow-100 text-yellow-700"
+                    : "bg-loss-light text-loss-dark";
+            return (
+              <div key={playbook_id} className="rounded-xl border border-surface-200 bg-white p-5 shadow-sm dark:border-surface-700 dark:bg-surface-800">
+                <div className="mb-4 flex items-center justify-between">
+                  <h2 className="text-xs font-semibold uppercase tracking-wide text-surface-400">
+                    Playbook
+                  </h2>
+                  {score !== null && (
+                    <span className={`inline-flex items-center rounded-full px-3 py-1 text-sm font-bold ${color}`}>
+                      Discipline {score.toFixed(0)}%
+                    </span>
+                  )}
+                </div>
+                <Link
+                  href={`/playbooks/${playbook_id}/edit`}
+                  className="mb-1 block text-sm font-medium text-primary-600 hover:underline dark:text-primary-400"
+                >
+                  {playbook.name}
+                </Link>
+                {playbook.description && (
+                  <p className="mb-3 text-xs text-surface-500">{playbook.description}</p>
+                )}
+                {playbook.playbook_rules.length > 0 && (
+                  <div className="mt-3 space-y-1.5">
+                    {playbook.playbook_rules.map((rule) => {
+                      const followed = ruleChecks[rule.id] ?? false;
+                      return (
+                        <div key={rule.id} className="flex items-center gap-2">
+                          <span
+                            className={cn(
+                              "flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-xs",
+                              followed
+                                ? "bg-profit-light text-profit"
+                                : "bg-surface-100 text-surface-400 dark:bg-surface-700"
+                            )}
+                          >
+                            {followed ? <Check className="h-2.5 w-2.5" /> : <X className="h-2.5 w-2.5" />}
+                          </span>
+                          <span className={cn("text-sm", followed ? "text-surface-700 dark:text-surface-200" : "text-surface-400 line-through")}>
+                            {rule.rule_text}
+                          </span>
+                          {rule.is_required && (
+                            <span className="text-xs text-loss">*</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </section>
+      )}
+
       {/* Screenshots */}
       <section className="mt-6 rounded-xl border border-surface-200 bg-white p-5 shadow-sm dark:border-surface-700 dark:bg-surface-800">
         <h2 className="mb-4 text-xs font-semibold uppercase tracking-wide text-surface-400">
@@ -739,6 +826,16 @@ export default function TradeDetailPage() {
           }
         />
       </section>
+
+      {/* AI Chart Inspector */}
+      {t.trade_playbooks?.length > 0 && (
+        <ChartInspector
+          tradeId={id}
+          playbookIds={t.trade_playbooks.map((tp) => tp.playbook_id)}
+          hasImages={displayImages.length > 0}
+          savedFeedback={(t.trade_playbook_grades ?? [])[0]?.ai_feedback ?? null}
+        />
+      )}
 
       {/* Modals */}
       <DeleteConfirmModal
