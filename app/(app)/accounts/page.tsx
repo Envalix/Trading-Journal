@@ -32,11 +32,13 @@ function AccountForm({
   onSubmit,
   onCancel,
   submitLabel,
+  showCurrentBalance = true,
 }: {
   initial: AccountFormData;
   onSubmit: (data: AccountFormData) => Promise<void>;
   onCancel: () => void;
   submitLabel: string;
+  showCurrentBalance?: boolean;
 }) {
   const [form, setForm] = useState<AccountFormData>(initial);
   const [submitting, setSubmitting] = useState(false);
@@ -112,19 +114,21 @@ function AccountForm({
             placeholder="0.00"
           />
         </div>
-        <div>
-          <Label htmlFor="acc-current">Current Balance</Label>
-          <input
-            id="acc-current"
-            type="number"
-            min="0"
-            step="any"
-            className={inputCls}
-            value={form.current_balance}
-            onChange={(e) => set("current_balance", e.target.value)}
-            placeholder="0.00"
-          />
-        </div>
+        {showCurrentBalance && (
+          <div>
+            <Label htmlFor="acc-current">Current Balance</Label>
+            <input
+              id="acc-current"
+              type="number"
+              min="0"
+              step="any"
+              className={inputCls}
+              value={form.current_balance}
+              onChange={(e) => set("current_balance", e.target.value)}
+              placeholder="0.00"
+            />
+          </div>
+        )}
       </div>
       <div className="flex justify-end gap-3">
         <Button type="button" variant="secondary" onClick={onCancel}>
@@ -277,7 +281,7 @@ export default function AccountsPage() {
         exchange: data.exchange.trim() || null,
         currency: data.currency,
         initial_balance: parseFloat(data.initial_balance) || 0,
-        current_balance: parseFloat(data.current_balance) || 0,
+        // current_balance is managed automatically by database trigger
       };
       await updateAccount(editingAccount.id, payload);
       toast("Account updated.", "success");
@@ -390,6 +394,7 @@ export default function AccountsPage() {
               onSubmit={handleEdit}
               onCancel={() => setEditingAccount(null)}
               submitLabel="Save Changes"
+              showCurrentBalance={false}
             />
           </section>
         ) : (
