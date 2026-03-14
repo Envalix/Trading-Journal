@@ -526,6 +526,15 @@ export default function TradeDetailPage() {
                         : ((entryPrice - tp.price) / entryPrice)) * 100
                     : null;
 
+                const tpProfit =
+                  entryPrice > 0 && t.quantity > 0
+                    ? (t.direction === "long"
+                        ? (tp.price - entryPrice)
+                        : (entryPrice - tp.price)) *
+                      t.quantity *
+                      (tp.quantity_pct / 100)
+                    : null;
+
                 return (
                   <div
                     key={tp.id}
@@ -582,6 +591,11 @@ export default function TradeDetailPage() {
                             )}
                           >
                             {tpPct.toFixed(2)}%
+                          </span>
+                        )}
+                        {tpProfit !== null && tpProfit !== 0 && (
+                          <span className={cn("text-xs font-medium", tpProfit > 0 ? "text-profit" : "text-loss")}>
+                            {tpProfit > 0 ? "+" : ""}{formatCurrency(tpProfit)}
                           </span>
                         )}
                         <span className="text-xs text-surface-400">{tp.quantity_pct}%</span>
